@@ -100,6 +100,7 @@ IF tableCount > 0 THEN
                      AND v_column_type != 'NUMBER'
                      AND instr(v_column_type, 'NCLOB') < 1 
                      AND instr(v_column_type, 'BLOB') < 1
+                     AND instr(v_column_type, 'CLOB') < 1
                      AND instr(v_column_type, 'TIMESTAMP') < 1 then
                      v_column_list := v_column_list || '('||column_type_len||')';
                   END IF;
@@ -134,6 +135,7 @@ IF tableCount > 0 THEN
                      AND v_column_type != 'NUMBER'
                      AND instr(v_column_type, 'NCLOB') < 1 
                      AND instr(v_column_type, 'BLOB') < 1
+                     AND instr(v_column_type, 'CLOB') < 1
                      AND instr(v_column_type, 'TIMESTAMP') < 1 then
                      v_column_list := v_column_list || '('||column_type_len||')';
                   END IF;
@@ -190,6 +192,7 @@ ELSE
                   AND v_column_type != 'NUMBER'
                   AND instr(v_column_type, 'NCLOB') < 1
                   AND instr(v_column_type, 'BLOB') < 1
+                  AND instr(v_column_type, 'CLOB') < 1
                   AND instr(v_column_type, 'TIMESTAMP') < 1 then
                   v_column_list := v_column_list || '('||column_type_len||')';
                END IF;
