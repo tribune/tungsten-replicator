@@ -318,6 +318,9 @@ public class ParallelExtractorThread extends Thread
                                                     timestampTZ.getBytes()));
                                         }
                                         break;
+                                    case Types.CLOB :
+                                        val = rs.getString(column.getName());
+                                        break;
                                     default :
                                         val = rs.getObject(column.getName());
                                         break;
