@@ -796,9 +796,25 @@ public class ProtobufSerializer implements Serializer
 
                 try
                 {
-                    byte[] blob = ((SerialBlob) value).getBytes(1,
-                            (int) ((SerialBlob) value).length());
-                    valueBuilder.setBytesValue(ByteString.copyFrom(blob));
+                    if(value instanceof SerialBlob)
+                    {
+                        byte[] blob = ((SerialBlob) value).getBytes(1,
+                                (int) ((SerialBlob) value).length());
+                        valueBuilder.setBytesValue(ByteString.copyFrom(blob));
+                    }
+                    else
+                    {
+                        try
+                        {
+                            SerialBlob sb = new SerialBlob((java.sql.Blob) value);
+                            byte[] blob = sb.getBytes(1, (int) sb.length());
+                            valueBuilder.setBytesValue(ByteString.copyFrom(blob));
+                        }
+                        catch(SQLException e)
+                        {
+                            logger.error("Failed to serialize Blob", e);
+                        }
+                    }
                 }
                 catch (SerialException e)
                 {
