@@ -280,21 +280,24 @@ public class ParallelExtractorThread extends Thread
                                 int columnType = column.getType();
                                 switch (columnType)
                                 {
+//                                    case Types.DATE :
+//                                        String dateVal = rs
+//                                                .getString(columnName);
+//                                        if (dateVal != null
+//                                                && dateVal.equals("0000-00-00"))
+//                                            val = Integer.valueOf(0);
+//                                        else
+//                                            val = rs.getDate(columnName);
+//                                        break;
                                     case Types.DATE :
-                                        String dateVal = rs
-                                                .getString(columnName);
-                                        if (dateVal != null
-                                                && dateVal.equals("0000-00-00"))
-                                            val = Integer.valueOf(0);
-                                        else
-                                            val = rs.getDate(columnName);
-                                        break;
                                     case Types.TIMESTAMP :
                                         String timestampVal = rs
                                                 .getString(columnName);
                                         if (timestampVal != null
-                                                && timestampVal
-                                                        .equals("0000-00-00 00:00:00"))
+                                                && (timestampVal
+                                                        .equals("0000-00-00 00:00:00") ||
+                                                    timestampVal
+                                                        .equals("0000-00-00")))
                                             val = Integer.valueOf(0);
                                         else
                                             val = rs.getTimestamp(columnName);
