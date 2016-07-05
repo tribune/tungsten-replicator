@@ -86,6 +86,8 @@ public class OracleCDCReaderThread extends Thread
     private PluginContext                context;
 
     private String                       dataSource;
+    
+    HashMap<String, String[]>            turbineClobTableMap;
 
     public OracleCDCReaderThread(PluginContext context, String dataSource,
             BlockingQueue<CDCMessage> queue, String lastSCN,
@@ -526,7 +528,15 @@ public class OracleCDCReaderThread extends Thread
                         {
                             if (buffer.length() > 0)
                                 buffer.append('\t');
-                            buffer.append(resultset.getString(i));
+                            int columnType = resultset.getMetaData().getColumnType(i);
+                            if(columnType == Types.BLOB)
+                            {
+                                buffer.append("BLOB for postistion " +i);
+                            }
+                            else
+                            {
+                                buffer.append(resultset.getString(i)); 
+                            }
                         }
 
                         if (logger.isDebugEnabled())
@@ -616,6 +626,14 @@ public class OracleCDCReaderThread extends Thread
                         {
                             logger.error("Unable to extract data from CDC (operation should be I, D, UO or UN - found "
                                     + operation + ") \n\tRead :" + buffer);
+                        }
+                        
+                        //Attempt to fix CLOB values that do not come through CDC properly for UPDATE and INSERT
+                        if(oneRowChange.getAction() != ActionType.DELETE)
+                        {
+                            String[] clobTableSpec = getTurbineClobFields(oneRowChange);
+                            if(clobTableSpec != null)
+                                fixTurbineClob(oneRowChange, clobTableSpec);
                         }
 
                         // Fragment event by rows (maxRowsByBlock rows max)
@@ -769,6 +787,140 @@ public class OracleCDCReaderThread extends Thread
             if (resultset.wasNull())
                 value.setValueNull();
             columns.add(value);
+        }
+    }
+    
+    
+    public void initTurbineClobTableMap() 
+    {
+        turbineClobTableMap = new HashMap<String, String[]>();
+        turbineClobTableMap.put("article", new String[] {"body", "contentitem_id"});
+        turbineClobTableMap.put("assembler_users", new String[] {"custom_params", "id"});
+        turbineClobTableMap.put("blurb", new String[] {"body", "contentitem_id"});
+        turbineClobTableMap.put("columnist", new String[] {"biography", "contentitem_id"});
+        turbineClobTableMap.put("contentitem_background", new String[] {"body", "contentitem_id"});
+        turbineClobTableMap.put("content_type_template", new String[] {"html", "id"});
+        turbineClobTableMap.put("embedded_videos", new String[] {"embed_code_params", "contentitem_id"});
+        turbineClobTableMap.put("embedded_video_productaffs", new String[] {"embed_code_params", "id"});
+        turbineClobTableMap.put("external_blog_posts", new String[] {"body", "contentitem_id"});
+        turbineClobTableMap.put("module_layout", new String[] {"custom_params_dict", "id"});
+        turbineClobTableMap.put("multimedia", new String[] {"caption", "contentitem_id"});
+        turbineClobTableMap.put("photo_metadata", new String[] {"source_caption", "contentitem_id"});
+        turbineClobTableMap.put("programmed_custom_params", new String[] {"clob_value", "id"});
+        turbineClobTableMap.put("sectiontemplate", new String[] {"html", "id"});
+        turbineClobTableMap.put("staff", new String[] {"biography", "contentitem_id"});
+        turbineClobTableMap.put("staff", new String[] {"social_profiles", "contentitem_id"});
+    }
+    
+    
+    public String[] getTurbineClobFields(OneRowChange oneRowChange)
+    {
+        String tableName = oneRowChange.getTableName().toLowerCase();
+        if(turbineClobTableMap == null)
+            initTurbineClobTableMap();
+        return turbineClobTableMap.get(tableName);
+    }
+    
+    public String extractClob(String schemaName, String tableName, String lookUpColumnValue, String[] clobTableSpec) throws ReplicatorException
+    {
+        String sql = "SELECT " + clobTableSpec[0].toUpperCase() + " FROM " + schemaName + "." + tableName +
+                           " WHERE " + clobTableSpec[1].toUpperCase() + " = " + lookUpColumnValue;
+        Statement stmt = null;
+        ResultSet resultset = null;
+        String extractValue = null;
+        try
+        {
+            logger.debug("executing SQL: " + sql);
+            stmt = connection.getConnection().createStatement();
+            resultset = stmt.executeQuery(sql);
+            while(resultset.next())
+            {
+                extractValue = resultset.getString(1);
+            }
+            return extractValue;
+        }
+        catch (SQLException e)
+        {
+            
+            throw new ReplicatorException("Failed to execute query "
+                        + sql, e);
+            
+        }
+        finally
+        {
+            try
+            {
+                if (resultset != null)
+                    resultset.close();
+            }
+            catch (SQLException ignore)
+            {
+                logger.warn("Failed to close oracle resultset", ignore);
+            }
+            try
+            {
+                if (stmt != null)
+                    stmt.close();
+            }
+            catch (SQLException ignore)
+            {
+                logger.warn("Failed to release oracle statement", ignore);
+            }
+        }
+    }
+    
+    public void fixTurbineClob(OneRowChange oneRowChange, String[] clobTableSpec) throws ReplicatorException
+    {
+        logger.debug("checking " + oneRowChange.getTableName() + " for empty CLOBs");
+        ArrayList<ArrayList<ColumnVal>> rowValues = oneRowChange.getColumnValues();
+        for (ArrayList<ColumnVal> row : rowValues)
+        {
+            int clobIndex=-1;
+            String clobValueStr=null, lookupValueStr=null;
+            for (int i = 0; i < row.size(); i++)
+            {
+                ColumnSpec colSpec = oneRowChange.getColumnSpec().get(i);
+                String colName = colSpec.getName().toLowerCase();
+                if(colName.equals(clobTableSpec[0]))
+                {
+                    clobIndex = i;
+                    logger.debug("matched column " + clobTableSpec[0] + " for clob index");
+                }
+                if(colName.equals(clobTableSpec[1]))
+                {
+                    ColumnVal lookUpValue = row.get(i);
+                    lookupValueStr = lookUpValue.getValue().toString();
+                    logger.debug("matched column from values " + clobTableSpec[1] + " for clob index");
+                }
+            }
+            if(lookupValueStr == null)
+            {
+                ArrayList<ArrayList<ColumnVal>> keyRowValues = oneRowChange.getKeyValues();
+                for (ArrayList<ColumnVal> keyRow : keyRowValues)
+                {
+                    for (int i = 0; i < keyRow.size(); i++)
+                    {
+                        ColumnSpec colSpec = oneRowChange.getKeySpec().get(i);
+                        String colName = colSpec.getName().toLowerCase();
+                        if(colName.equals(clobTableSpec[1]))
+                        {
+                            ColumnVal lookUpValue = keyRow.get(i);
+                            lookupValueStr = lookUpValue.getValue().toString();
+                            logger.debug("matched column from keys " + clobTableSpec[1] + " for clob index");
+                        }
+                    }
+                }
+            }
+            if(clobIndex > -1 && lookupValueStr != null)
+            {
+                ColumnVal clobValue = row.get(clobIndex);
+                clobValueStr = (String) clobValue.getValue();
+                if(clobValueStr != null && clobValueStr.trim().length() == 0)
+                {
+                    String extractedValue = extractClob(oneRowChange.getSchemaName(), oneRowChange.getTableName(), lookupValueStr, clobTableSpec);
+                    clobValue.setValue(extractedValue);
+                }
+            }           
         }
     }
 
